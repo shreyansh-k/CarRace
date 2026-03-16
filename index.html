@@ -379,6 +379,8 @@ const MODEL_FILES={
 // AUDIO
 // ══════════════════════════════════════════
 let actx,masterG,engOsc,engOsc2,engOsc3,engG,engFilter,engLFO;
+let cheerAudioBuffer = null; // For MP3 cheering
+
 function initAudio(){
   if(actx)return;
   actx=new(window.AudioContext||window.webkitAudioContext)();
@@ -417,6 +419,25 @@ function initAudio(){
   engFilter.connect(dist);dist.connect(engG);engG.connect(masterG);
   
   engOsc.start();engOsc2.start();engOsc3.start();engLFO.start();
+  
+  // Try to load cheer.mp3
+  loadCheerAudio();
+}
+
+function loadCheerAudio(){
+  fetch('cheer.mp3')
+    .then(response => {
+      if(!response.ok) throw new Error('MP3 not found');
+      return response.arrayBuffer();
+    })
+    .then(arrayBuffer => actx.decodeAudioData(arrayBuffer))
+    .then(buffer => {
+      cheerAudioBuffer = buffer;
+      console.log('Cheer MP3 loaded successfully!');
+    })
+    .catch(error => {
+      console.log('Cheer MP3 not found, using synthesized sound:', error);
+    });
 }
 function setEngine(spd,thr){
   if(!actx)return;
@@ -434,8 +455,27 @@ function setEngine(spd,thr){
   const filterFreq = Math.min(3000, 800 + throttleRPM * 0.8);
   engFilter.frequency.setTargetAtTime(filterFreq, actx.currentTime, 0.1);
   
-  // Engine volume based on throttle and speed
-  const volume = Math.min(0.12, (spd * 0.002) + (Math.abs(thr) * 0.08));
+  // Check if player is near spectators (within 80 units)
+  let nearSpectators = false;
+  if(spectators && spectators.length > 0){
+    const px = playerGroup.position.x;
+    const pz = playerGroup.position.z;
+    for(const spec of spectators){
+      const dx = px - spec.position.x;
+      const dz = pz - spec.position.z;
+      const dist = Math.sqrt(dx*dx + dz*dz);
+      if(dist < 80){ // Within 80 units of any spectator
+        nearSpectators = true;
+        break;
+      }
+    }
+  }
+  
+  // Engine volume based on throttle and speed, but mute when near spectators
+  let volume = Math.min(0.12, (spd * 0.002) + (Math.abs(thr) * 0.08));
+  if(nearSpectators){
+    volume *= 0.1; // Reduce to 10% volume when near spectators
+  }
   engG.gain.setTargetAtTime(volume, actx.currentTime, 0.08);
   
   // Update RPM display
@@ -447,44 +487,57 @@ function sndHorn(){if(!actx)return;const o=actx.createOscillator(),g=actx.create
 function sndBeep(f,v=0.2){if(!actx)return;const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=f;o.connect(g);g.connect(masterG);g.gain.setValueAtTime(v,actx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.2);o.start();o.stop(actx.currentTime+0.25);}
 function sndCheer(){
   if(!actx)return;
-  // More exciting crowd cheer with multiple voices and harmonics
-  const cheerPatterns = [
-    [440, 550, 660, 880], // "Woo!"
-    [330, 440, 550, 660], // "Yeah!"
-    [523, 659, 784, 988] // "Go go!"
-  ];
-  const pattern = cheerPatterns[Math.floor(Math.random() * cheerPatterns.length)];
-  
-  pattern.forEach((f,i)=>{
-    // Main voice
-    const o1=actx.createOscillator(), g1=actx.createGain();
-    o1.type='sawtooth'; o1.frequency.value=f;
-    o1.connect(g1); g1.connect(masterG);
-    g1.gain.setValueAtTime(0.15, actx.currentTime + i*0.08); // Increased volume
-    g1.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.4 + i*0.08);
-    o1.start(actx.currentTime + i*0.08);
-    o1.stop(actx.currentTime + 0.45 + i*0.08);
-    
-    // Harmonic for richness
-    const o2=actx.createOscillator(), g2=actx.createGain();
-    o2.type='triangle'; o2.frequency.value=f * 2;
-    o2.connect(g2); g2.connect(masterG);
-    g2.gain.setValueAtTime(0.08, actx.currentTime + i*0.08); // Increased volume
-    g2.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.4 + i*0.08);
-    o2.start(actx.currentTime + i*0.08);
-    o2.stop(actx.currentTime + 0.45 + i*0.08);
-  });
-  
-  // Add some random background cheers
-  for(let i=0; i<5; i++){ // More background voices
-    const delay = Math.random() * 0.3;
-    const freq = 200 + Math.random() * 600; // Wider frequency range
-    const o=actx.createOscillator(), g=actx.createGain();
-    o.type='sine'; o.frequency.value=freq;
-    o.connect(g); g.connect(masterG);
-    g.gain.setValueAtTime(0.03, actx.currentTime + delay); // Increased volume
-    g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.2 + delay);
-    o.start(actx.currentTime + delay);
+
+  // Use MP3 if available, otherwise fall back to synthesized sound
+  if(cheerAudioBuffer){
+    const source = actx.createBufferSource();
+    const gainNode = actx.createGain();
+    source.buffer = cheerAudioBuffer;
+    source.connect(gainNode);
+    gainNode.connect(masterG);
+    gainNode.gain.setValueAtTime(0.3, actx.currentTime); // Good volume for MP3
+    source.start();
+  } else {
+    // Fallback to synthesized sound
+    // More exciting crowd cheer with multiple voices and harmonics
+    const cheerPatterns = [
+      [440, 550, 660, 880], // "Woo!"
+      [330, 440, 550, 660], // "Yeah!"
+      [523, 659, 784, 988] // "Go go!"
+    ];
+    const pattern = cheerPatterns[Math.floor(Math.random() * cheerPatterns.length)];
+
+    pattern.forEach((f,i)=>{
+      // Main voice
+      const o1=actx.createOscillator(), g1=actx.createGain();
+      o1.type='sawtooth'; o1.frequency.value=f;
+      o1.connect(g1); g1.connect(masterG);
+      g1.gain.setValueAtTime(0.15, actx.currentTime + i*0.08); // Increased volume
+      g1.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.4 + i*0.08);
+      o1.start(actx.currentTime + i*0.08);
+      o1.stop(actx.currentTime + 0.45 + i*0.08);
+
+      // Harmonic for richness
+      const o2=actx.createOscillator(), g2=actx.createGain();
+      o2.type='triangle'; o2.frequency.value=f * 2;
+      o2.connect(g2); g2.connect(masterG);
+      g2.gain.setValueAtTime(0.08, actx.currentTime + i*0.08); // Increased volume
+      g2.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.4 + i*0.08);
+      o2.start(actx.currentTime + i*0.08);
+      o2.stop(actx.currentTime + 0.45 + i*0.08);
+    });
+
+    // Add some random background cheers
+    for(let i=0; i<5; i++){ // More background voices
+      const delay = Math.random() * 0.3;
+      const freq = 200 + Math.random() * 600; // Wider frequency range
+      const o=actx.createOscillator(), g=actx.createGain();
+      o.type='sine'; o.frequency.value=freq;
+      o.connect(g); g.connect(masterG);
+      g.gain.setValueAtTime(0.03, actx.currentTime + delay); // Increased volume
+      g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.2 + delay);
+      o.start(actx.currentTime + delay);
+    }
   }
 }
 function sndGearShift(){
@@ -883,27 +936,41 @@ function buildAI(){
   aiRacers=[];
   for(let i=0;i<4;i++){
     const meta=currentAIMeta[i];
-    // START ALL AI IN A HORIZONTAL LINE FROM LEFT TO RIGHT
-    const angleOffset = (i - 1.5) * 0.15; // Spread by small angle increments
-    const startX = Math.cos(angleOffset) * TRACK_R;
-    const startZ = Math.sin(angleOffset) * TRACK_R;
+    // START ALL AI IN A STRAIGHT HORIZONTAL LINE ACROSS THE TRACK
+    const spacing = 12; // Distance between cars in the line
+    const startX = TRACK_R; // All start at the same X position (track radius)
+    const startZ = (i - 1.5) * spacing; // Spread along Z axis in a straight line
     const g=new THREE.Group();
     const wrap=new THREE.Group();wrap.rotation.y=Math.PI;
     wrap.add(cloneM(meta.key,meta.col));
     g.add(wrap);
     g.position.set(startX,0,startZ);
-    const ty = Math.PI + angleOffset; // Face the correct direction
+    // Face toward the first waypoint for correct direction
+    const firstWp = WPS[0];
+    const dx = firstWp.x - startX;
+    const dz = firstWp.z - startZ;
+    const ty = Math.atan2(-dx, -dz); // Face toward first waypoint
     g.rotation.y=ty;
     scene.add(g);
     const wpIdx=0; // Start at first waypoint
+    
+    // Create individual waypoints for this AI car with lateral offset
+    const lateralOffset = (i - 1.5) * 8; // Spread AI cars across different radii
+    const aiWaypoints = WPS.map(wp => ({
+      x: wp.x + lateralOffset * Math.cos(Math.atan2(wp.z, wp.x) + Math.PI/2),
+      z: wp.z + lateralOffset * Math.sin(Math.atan2(wp.z, wp.x) + Math.PI/2)
+    }));
+    
     aiRacers.push({
-      mesh:g, yaw:ty, speed:0,
+      mesh:g, yaw:ty, speed:0, // Use correct initial yaw
       targetSpd:meta.baseSpd+Math.random()*meta.var,
       wpIdx, lapCount:0, totalProgress:0, bestLap:Infinity,
       lapStartT:0, hornCD:0, meta,
       velX:0, velZ:0, crashTimer:0,
       aiTotalAngle:0, aiLastAngle:undefined, aiLapAccum:0,
-      aggrFactor:0.6+Math.random()*0.2 // Reduced aggression
+      aggrFactor:0.8+Math.random()*0.3, // Increased aggression for faster AI
+      waypoints: aiWaypoints, // Individual waypoints for this AI
+      speedFactor: 0.5 + Math.random() * 0.2 // Random speed factor between 0.5-0.7
     });
   }
 }
@@ -1086,7 +1153,7 @@ function updateAI(dt){
     if(ai.speed<2&&raceStarted) ai.stuckTimer+=dt; else ai.stuckTimer=0;
     if(ai.stuckTimer>1.5){
       let bestIdx=0,bestDot=-Infinity;
-      WPS.forEach((w,idx)=>{
+      ai.waypoints.forEach((w,idx)=>{
         const dx=w.x-ai.mesh.position.x,dz=w.z-ai.mesh.position.z;
         const dot=(-Math.sin(ai.yaw))*dx+(-Math.cos(ai.yaw))*dz;
         if(dot>bestDot){bestDot=dot;bestIdx=idx;}
@@ -1099,10 +1166,10 @@ function updateAI(dt){
     }
 
     // ── Waypoint steering: single target only (no blending = no behind-spin) ──
-    const wp=WPS[ai.wpIdx];
+    const wp=ai.waypoints[ai.wpIdx];
     const dx=wp.x-ai.mesh.position.x, dz=wp.z-ai.mesh.position.z;
     const d=Math.sqrt(dx*dx+dz*dz);
-    if(d<18) ai.wpIdx=(ai.wpIdx+1)%WPS.length; // Smaller threshold for better following
+    if(d<18) ai.wpIdx=(ai.wpIdx+1)%ai.waypoints.length; // Smaller threshold for better following
 
     const tYaw=Math.atan2(-dx,-dz);
     let yd=tYaw-ai.yaw;
@@ -1111,18 +1178,15 @@ function updateAI(dt){
     // Smoother steering: max 3deg/frame for more realistic turns
     ai.yaw+=Math.max(-0.052,Math.min(0.052,yd*0.08));
 
-    // ── Speed: easier baseline 70% player car maxSpd ──
-    const hardBase=playerCar.maxSpd*0.7;
-    const softRef=(raceStarted&&playerAvgSpeed>8)?playerAvgSpeed*0.9:hardBase;
-    const refSpd=Math.max(hardBase,softRef);
+    // ── Speed: random factor between 50-70% of player car maxSpd ──
+    const playerCar=PLAYER_CARS[selectedCarIdx];
+    const baseSpeed = playerCar.maxSpd * ai.speedFactor; // Use random speed factor
+    let targetSpd = baseSpeed;
 
     if(ai.crashTimer>0){
       ai.crashTimer-=dt;
       ai.speed=Math.max(ai.speed*0.95,3); // Recover faster
     } else {
-      const gap=(lapAngleAccum||0)-(ai.aiLapAccum||0)+(lapCount-ai.lapCount)*Math.PI*2;
-      const rb=Math.tanh(gap*0.12)*refSpd*0.08; // Less aggressive gap closing
-      const targetSpd=Math.min(refSpd*ai.aggrFactor+rb, playerCar.maxSpd*0.9); // Cap at 90% of player max
       ai.speed+=(targetSpd-ai.speed)*0.06; // Slower acceleration changes
     }
     if(!raceStarted) ai.speed=Math.min(ai.speed,8); // Slower at start
