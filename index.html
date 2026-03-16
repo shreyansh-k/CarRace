@@ -300,7 +300,7 @@ let gameMode='race';
 // Player rolling average speed (m/s) — AI targets this
 let playerAvgSpeed=0, playerSpeedSamples=[];
 const SPD_SAMPLE_WINDOW=5; // seconds of samples
-let spectators=[];
+let spectators=[], spectatorFadeState=0;
 let solidObs=[];
 let aiRacers=[];
 let coinList=[];
@@ -425,18 +425,23 @@ function initAudio(){
 }
 
 function loadCheerAudio(){
+  // Using a more reliable way to handle the audio context state
   fetch('cheer.mp3')
     .then(response => {
-      if(!response.ok) throw new Error('MP3 not found');
+      if(!response.ok) throw new Error('MP3 file not found on server');
       return response.arrayBuffer();
     })
-    .then(arrayBuffer => actx.decodeAudioData(arrayBuffer))
+    .then(arrayBuffer => {
+      // Always decode into a fresh context or the active one
+      return actx.decodeAudioData(arrayBuffer);
+    })
     .then(buffer => {
       cheerAudioBuffer = buffer;
-      console.log('Cheer MP3 loaded successfully!');
+      console.log('Cheer MP3 loaded successfully! Size:', buffer.length);
     })
     .catch(error => {
-      console.log('Cheer MP3 not found, using synthesized sound:', error);
+      console.error('CHEER AUDIO ERROR:', error.message);
+      // We keep cheerAudioBuffer as null so it falls back to synthesized sound
     });
 }
 function setEngine(spd,thr){
@@ -455,28 +460,64 @@ function setEngine(spd,thr){
   const filterFreq = Math.min(3000, 800 + throttleRPM * 0.8);
   engFilter.frequency.setTargetAtTime(filterFreq, actx.currentTime, 0.1);
   
-  // Check if player is near spectators (within 80 units)
+  // Check if player is near spectators with hysteresis to prevent audio artifacts
   let nearSpectators = false;
+  
   if(spectators && spectators.length > 0){
     const px = playerGroup.position.x;
     const pz = playerGroup.position.z;
+    let minDist = Infinity;
+    
     for(const spec of spectators){
       const dx = px - spec.position.x;
       const dz = pz - spec.position.z;
       const dist = Math.sqrt(dx*dx + dz*dz);
-      if(dist < 80){ // Within 80 units of any spectator
-        nearSpectators = true;
-        break;
+      minDist = Math.min(minDist, dist);
+    }
+    
+    // Hysteresis: turn on at 70 units, turn off at 90 units
+    if(minDist < 70 && spectatorFadeState === 0){
+      spectatorFadeState = 1; // Start fading out
+    } else if(minDist > 90 && spectatorFadeState === 2){
+      spectatorFadeState = 3; // Start fading in
+    }
+    
+    nearSpectators = (spectatorFadeState === 1 || spectatorFadeState === 2);
+  } else {
+    // No spectators nearby, fade back in
+    if(spectatorFadeState === 2){
+      spectatorFadeState = 3;
+    }
+    nearSpectators = false;
+  }
+  
+  // Engine volume based on throttle and speed, but reduce when near spectators
+  let volume = Math.min(0.12, (spd * 0.002) + (Math.abs(thr) * 0.08));
+  
+  // Apply spectator volume reduction with smooth transitions
+  if(nearSpectators){
+    if(spectatorFadeState === 1){
+      // Fading out - reduce to 15% over time
+      volume *= 0.15;
+      // Check if fade is complete
+      if(Math.abs(engG.gain.value - volume) < 0.001){
+        spectatorFadeState = 2; // Fully muted
       }
+    } else if(spectatorFadeState === 2){
+      // Fully muted
+      volume *= 0.15;
+    }
+  } else if(spectatorFadeState === 3){
+    // Fading back in
+    volume = Math.min(0.12, (spd * 0.002) + (Math.abs(thr) * 0.08));
+    // Check if fade is complete
+    if(Math.abs(engG.gain.value - volume) < 0.001){
+      spectatorFadeState = 0; // Back to normal
     }
   }
   
-  // Engine volume based on throttle and speed, but mute when near spectators
-  let volume = Math.min(0.12, (spd * 0.002) + (Math.abs(thr) * 0.08));
-  if(nearSpectators){
-    volume *= 0.1; // Reduce to 10% volume when near spectators
-  }
-  engG.gain.setTargetAtTime(volume, actx.currentTime, 0.08);
+  // Very smooth transition to prevent any audio artifacts
+  engG.gain.setTargetAtTime(volume, actx.currentTime, 0.5);
   
   // Update RPM display
   document.getElementById('rpmNum').textContent = Math.round(throttleRPM);
@@ -486,56 +527,57 @@ function sndCoin(){if(!actx)return;[523,784,1047].forEach((f,i)=>{const o=actx.c
 function sndHorn(){if(!actx)return;const o=actx.createOscillator(),g=actx.createGain();o.type='square';o.frequency.value=440;o.connect(g);g.connect(masterG);g.gain.setValueAtTime(0.08,actx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.28);o.start();o.stop(actx.currentTime+0.28);}
 function sndBeep(f,v=0.2){if(!actx)return;const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=f;o.connect(g);g.connect(masterG);g.gain.setValueAtTime(v,actx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.2);o.start();o.stop(actx.currentTime+0.25);}
 function sndCheer(){
-  if(!actx)return;
-
-  // Use MP3 if available, otherwise fall back to synthesized sound
+  if(!actx) return;
+  
+  // Use MP3 if available
   if(cheerAudioBuffer){
+    console.log("Playing MP3 CHEER!");
     const source = actx.createBufferSource();
     const gainNode = actx.createGain();
     source.buffer = cheerAudioBuffer;
     source.connect(gainNode);
     gainNode.connect(masterG);
-    gainNode.gain.setValueAtTime(0.3, actx.currentTime); // Good volume for MP3
+    gainNode.gain.setValueAtTime(0.8, actx.currentTime); // LOUDER (0.8)
     source.start();
   } else {
+    console.log("MP3 NOT LOADED - Falling back to synth");
     // Fallback to synthesized sound
-    // More exciting crowd cheer with multiple voices and harmonics
     const cheerPatterns = [
       [440, 550, 660, 880], // "Woo!"
       [330, 440, 550, 660], // "Yeah!"
       [523, 659, 784, 988] // "Go go!"
     ];
     const pattern = cheerPatterns[Math.floor(Math.random() * cheerPatterns.length)];
-
+    
     pattern.forEach((f,i)=>{
       // Main voice
       const o1=actx.createOscillator(), g1=actx.createGain();
       o1.type='sawtooth'; o1.frequency.value=f;
       o1.connect(g1); g1.connect(masterG);
-      g1.gain.setValueAtTime(0.15, actx.currentTime + i*0.08); // Increased volume
-      g1.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.4 + i*0.08);
+      g1.gain.setValueAtTime(0.3, actx.currentTime + i*0.08); // Doubled volume
+      g1.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.5 + i*0.08);
       o1.start(actx.currentTime + i*0.08);
-      o1.stop(actx.currentTime + 0.45 + i*0.08);
-
+      o1.stop(actx.currentTime + 0.55 + i*0.08);
+      
       // Harmonic for richness
       const o2=actx.createOscillator(), g2=actx.createGain();
       o2.type='triangle'; o2.frequency.value=f * 2;
       o2.connect(g2); g2.connect(masterG);
-      g2.gain.setValueAtTime(0.08, actx.currentTime + i*0.08); // Increased volume
-      g2.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.4 + i*0.08);
+      g2.gain.setValueAtTime(0.2, actx.currentTime + i*0.08); // Doubled volume
+      g2.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.5 + i*0.08);
       o2.start(actx.currentTime + i*0.08);
-      o2.stop(actx.currentTime + 0.45 + i*0.08);
+      o2.stop(actx.currentTime + 0.55 + i*0.08);
     });
-
-    // Add some random background cheers
-    for(let i=0; i<5; i++){ // More background voices
-      const delay = Math.random() * 0.3;
-      const freq = 200 + Math.random() * 600; // Wider frequency range
+    
+    // Add more background voices
+    for(let i=0; i<8; i++){ 
+      const delay = Math.random() * 0.4;
+      const freq = 150 + Math.random() * 800; 
       const o=actx.createOscillator(), g=actx.createGain();
       o.type='sine'; o.frequency.value=freq;
       o.connect(g); g.connect(masterG);
-      g.gain.setValueAtTime(0.03, actx.currentTime + delay); // Increased volume
-      g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.2 + delay);
+      g.gain.setValueAtTime(0.08, actx.currentTime + delay); // Louder background
+      g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.3 + delay);
       o.start(actx.currentTime + delay);
     }
   }
@@ -921,8 +963,9 @@ function buildPlayerCar(){
   modelWrapper.rotation.y=Math.PI;
   modelWrapper.add(cloneM(carDef.id, carDef.col));
   playerGroup.add(modelWrapper);
-  playerGroup.position.set(TRACK_R,0,8);  // STARTING LINE
-  playerGroup.rotation.y=carYaw;
+  playerGroup.position.set(TRACK_R, 0, 8);  // STARTING LINE
+  carYaw = Math.PI; // Correct starting rotation for a straight line
+  playerGroup.rotation.y = carYaw;
   scene.add(playerGroup);
 }
 
@@ -936,21 +979,25 @@ function buildAI(){
   aiRacers=[];
   for(let i=0;i<4;i++){
     const meta=currentAIMeta[i];
-    // START ALL AI IN A STRAIGHT HORIZONTAL LINE ACROSS THE TRACK
-    const spacing = 12; // Distance between cars in the line
-    const startX = TRACK_R; // All start at the same X position (track radius)
-    const startZ = (i - 1.5) * spacing; // Spread along Z axis in a straight line
+    // START ALL AI IN A STRAIGHT HORIZONTAL LINE AT THE TRACK_R RADIUS
+    const spacing = 18; // Distance between cars in the line
+    const startX = TRACK_R; // All AI cars start at the track radius X
+    const playerZ = 8; // Player's Z position is 8
+    
+    // Position AI cars in a perfectly straight line along the Z-axis
+    // The player is at (TRACK_R, 0, 8), so we center AI around this
+    const startZ = playerZ + (i - 1.5) * spacing; 
+
     const g=new THREE.Group();
     const wrap=new THREE.Group();wrap.rotation.y=Math.PI;
     wrap.add(cloneM(meta.key,meta.col));
     g.add(wrap);
-    g.position.set(startX,0,startZ);
-    // Face toward the first waypoint for correct direction
-    const firstWp = WPS[0];
-    const dx = firstWp.x - startX;
-    const dz = firstWp.z - startZ;
-    const ty = Math.atan2(-dx, -dz); // Face toward first waypoint
-    g.rotation.y=ty;
+    g.position.set(startX, 0, startZ);
+    
+    // Perfectly align the starting rotation (yaw) to look forward (towards negative X)
+    const ty = Math.PI; 
+    g.rotation.y = ty;
+    
     scene.add(g);
     const wpIdx=0; // Start at first waypoint
     
@@ -962,15 +1009,14 @@ function buildAI(){
     }));
     
     aiRacers.push({
-      mesh:g, yaw:ty, speed:0, // Use correct initial yaw
-      targetSpd:meta.baseSpd+Math.random()*meta.var,
+      mesh:g, yaw:ty, speed:0, 
       wpIdx, lapCount:0, totalProgress:0, bestLap:Infinity,
       lapStartT:0, hornCD:0, meta,
       velX:0, velZ:0, crashTimer:0,
       aiTotalAngle:0, aiLastAngle:undefined, aiLapAccum:0,
-      aggrFactor:0.8+Math.random()*0.3, // Increased aggression for faster AI
-      waypoints: aiWaypoints, // Individual waypoints for this AI
-      speedFactor: 0.5 + Math.random() * 0.2 // Random speed factor between 0.5-0.7
+      aggrFactor:0.95 + Math.random() * 0.15, // High aggression factor
+      waypoints: aiWaypoints,
+      speedFactor: 0.85 + Math.random() * 0.1 // Much faster: 85-95% of player speed
     });
   }
 }
@@ -1009,13 +1055,17 @@ function updatePlayer(dt){
   if(countdownActive)thr=0;
   const spd=Math.sqrt(vel.x*vel.x+vel.z*vel.z);
   // ── CROWD CHEER DETECTION ──
-  const nearGrandstand0 = Math.hypot(playerGroup.position.x-0, playerGroup.position.z+(TRACK_R-70)) < 45; // Larger detection area
-  const nearGrandstand1 = Math.hypot(playerGroup.position.x-0, playerGroup.position.z-(TRACK_R-70)) < 45; // Larger detection area
-  const nearCrowd = nearGrandstand0 || nearGrandstand1;
-  // Trigger cheer when passing crowd at speed (not just being near)
-  if(raceStarted && nearCrowd && spd > 10 && Date.now() - lastCrowdCheerT > 2000){ // Lower speed threshold and shorter cooldown
+  // Check against the actual grandstand positions from buildWorld
+  const d0 = Math.hypot(playerGroup.position.x - 0, playerGroup.position.z - (-(TRACK_R - 70)));
+  const d1 = Math.hypot(playerGroup.position.x - 0, playerGroup.position.z - (TRACK_R - 70));
+  const nearCrowd = d0 < 120 || d1 < 120; // Much larger trigger radius
+  
+  // Trigger cheer when passing crowd at any reasonable speed
+  if(raceStarted && nearCrowd && spd > 5 && Date.now() - lastCrowdCheerT > 3000){ 
     sndCheer();
     lastCrowdCheerT = Date.now();
+    // Visual feedback - slight screen shake or flash could go here
+    console.log("Crowd cheering!"); 
   }
   // Accelerate
   const acc=CAR_ACCEL*thr*dt;
@@ -1169,19 +1219,24 @@ function updateAI(dt){
     const wp=ai.waypoints[ai.wpIdx];
     const dx=wp.x-ai.mesh.position.x, dz=wp.z-ai.mesh.position.z;
     const d=Math.sqrt(dx*dx+dz*dz);
-    if(d<18) ai.wpIdx=(ai.wpIdx+1)%ai.waypoints.length; // Smaller threshold for better following
+    if(d<22) ai.wpIdx=(ai.wpIdx+1)%ai.waypoints.length; // Increased threshold for smoother entry
 
     const tYaw=Math.atan2(-dx,-dz);
     let yd=tYaw-ai.yaw;
     while(yd>Math.PI)yd-=Math.PI*2;
     while(yd<-Math.PI)yd+=Math.PI*2;
-    // Smoother steering: max 3deg/frame for more realistic turns
-    ai.yaw+=Math.max(-0.052,Math.min(0.052,yd*0.08));
+    
+    // Smarter steering: adjust look-ahead based on speed for smoother turns
+    const steerSmooth = Math.min(0.08, 0.04 + (ai.speed / 100)); 
+    ai.yaw+=Math.max(-0.065,Math.min(0.065,yd*steerSmooth));
 
-    // ── Speed: random factor between 50-70% of player car maxSpd ──
+    // ── Speed: random factor between 85-95% (Higher difficulty) ──
     const playerCar=PLAYER_CARS[selectedCarIdx];
-    const baseSpeed = playerCar.maxSpd * ai.speedFactor; // Use random speed factor
+    const baseSpeed = playerCar.maxSpd * ai.speedFactor; 
     let targetSpd = baseSpeed;
+
+    // AI is smarter: slows down slightly for sharp turns (detected by yd)
+    if(Math.abs(yd) > 0.4) targetSpd *= 0.85; 
 
     if(ai.crashTimer>0){
       ai.crashTimer-=dt;
