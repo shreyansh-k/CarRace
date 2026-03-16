@@ -158,7 +158,7 @@ canvas{display:block}
 #steer-left{bottom:20px;right:120px}
 #steer-right{bottom:20px;right:20px}
 #hard-brake-btn{top:20px;left:50%;transform:translateX(-50%);width:100px;height:50px;border-radius:25px;font-size:18px;letter-spacing:2px}
-.mobile-hint{position:fixed;top:10px;left:50%;transform:translateX(-50%);color:#00d4ff66;font-size:12px;letter-spacing:2px;text-align:center;display:none}
+.mobile-hint{position:fixed;top:10px;left:50%;transform:translateX(-50%);color:#00d4ff;font-size:14px;letter-spacing:1px;text-align:center;display:none;font-weight:bold;text-shadow:0 0 10px #00d4ff66;background:rgba(0,0,0,0.7);padding:8px 16px;border-radius:20px;border:1px solid #00d4ff44}
 </style>
 </head>
 <body>
@@ -248,7 +248,7 @@ canvas{display:block}
     <div id="steer-right" class="mobile-btn">➡</div>
     <div id="hard-brake-btn" class="mobile-btn">STOP</div>
   </div>
-  <div id="mobile-hint">TAP BUTTONS TO DRIVE</div>
+  <div id="mobile-hint">TAP BUTTONS TO DRIVE • ⏫ ACCELERATE • ⏬ BRAKE • ⬅➡ STEER • STOP EMERGENCY BRAKE</div>
 </div>
 
 <div id="finish-screen">
@@ -460,7 +460,7 @@ function sndCheer(){
     const o1=actx.createOscillator(), g1=actx.createGain();
     o1.type='sawtooth'; o1.frequency.value=f;
     o1.connect(g1); g1.connect(masterG);
-    g1.gain.setValueAtTime(0.08, actx.currentTime + i*0.08);
+    g1.gain.setValueAtTime(0.15, actx.currentTime + i*0.08); // Increased volume
     g1.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.4 + i*0.08);
     o1.start(actx.currentTime + i*0.08);
     o1.stop(actx.currentTime + 0.45 + i*0.08);
@@ -469,20 +469,20 @@ function sndCheer(){
     const o2=actx.createOscillator(), g2=actx.createGain();
     o2.type='triangle'; o2.frequency.value=f * 2;
     o2.connect(g2); g2.connect(masterG);
-    g2.gain.setValueAtTime(0.04, actx.currentTime + i*0.08);
+    g2.gain.setValueAtTime(0.08, actx.currentTime + i*0.08); // Increased volume
     g2.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.4 + i*0.08);
     o2.start(actx.currentTime + i*0.08);
     o2.stop(actx.currentTime + 0.45 + i*0.08);
   });
   
   // Add some random background cheers
-  for(let i=0; i<3; i++){
+  for(let i=0; i<5; i++){ // More background voices
     const delay = Math.random() * 0.3;
-    const freq = 200 + Math.random() * 400;
+    const freq = 200 + Math.random() * 600; // Wider frequency range
     const o=actx.createOscillator(), g=actx.createGain();
     o.type='sine'; o.frequency.value=freq;
     o.connect(g); g.connect(masterG);
-    g.gain.setValueAtTime(0.02, actx.currentTime + delay);
+    g.gain.setValueAtTime(0.03, actx.currentTime + delay); // Increased volume
     g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.2 + delay);
     o.start(actx.currentTime + delay);
   }
@@ -747,7 +747,7 @@ function initGame(bi){
   if(isMobile){
     document.getElementById('mobile-controls').style.display='block';
     document.getElementById('mobile-hint').style.display='block';
-    document.getElementById('control-hint').textContent='TAP BUTTONS TO DRIVE · C Camera · R Reset/Race';
+    document.getElementById('control-hint').textContent='ON MOBILE: Use touch buttons below • C Camera • R Reset/Race';
     setupMobileControls();
   }
   
@@ -942,11 +942,11 @@ function updatePlayer(dt){
   if(countdownActive)thr=0;
   const spd=Math.sqrt(vel.x*vel.x+vel.z*vel.z);
   // ── CROWD CHEER DETECTION ──
-  const nearGrandstand0 = Math.hypot(playerGroup.position.x-0, playerGroup.position.z+(TRACK_R-70)) < 35;
-  const nearGrandstand1 = Math.hypot(playerGroup.position.x-0, playerGroup.position.z-(TRACK_R-70)) < 35;
+  const nearGrandstand0 = Math.hypot(playerGroup.position.x-0, playerGroup.position.z+(TRACK_R-70)) < 45; // Larger detection area
+  const nearGrandstand1 = Math.hypot(playerGroup.position.x-0, playerGroup.position.z-(TRACK_R-70)) < 45; // Larger detection area
   const nearCrowd = nearGrandstand0 || nearGrandstand1;
   // Trigger cheer when passing crowd at speed (not just being near)
-  if(raceStarted && nearCrowd && spd > 15 && Date.now() - lastCrowdCheerT > 3000){
+  if(raceStarted && nearCrowd && spd > 10 && Date.now() - lastCrowdCheerT > 2000){ // Lower speed threshold and shorter cooldown
     sndCheer();
     lastCrowdCheerT = Date.now();
   }
