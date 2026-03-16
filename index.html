@@ -883,15 +883,16 @@ function buildAI(){
   aiRacers=[];
   for(let i=0;i<4;i++){
     const meta=currentAIMeta[i];
-    // START ALL AI IN A HORIZONTAL LINE ACROSS THE TRACK
-    const startX = TRACK_R + (i - 1.5) * 12; // Spread horizontally
-    const startZ = 8; // All at same Z position
+    // START ALL AI IN A HORIZONTAL LINE FROM LEFT TO RIGHT
+    const angleOffset = (i - 1.5) * 0.15; // Spread by small angle increments
+    const startX = Math.cos(angleOffset) * TRACK_R;
+    const startZ = Math.sin(angleOffset) * TRACK_R;
     const g=new THREE.Group();
     const wrap=new THREE.Group();wrap.rotation.y=Math.PI;
     wrap.add(cloneM(meta.key,meta.col));
     g.add(wrap);
     g.position.set(startX,0,startZ);
-    const ty=Math.PI;
+    const ty = Math.PI + angleOffset; // Face the correct direction
     g.rotation.y=ty;
     scene.add(g);
     const wpIdx=0; // Start at first waypoint
