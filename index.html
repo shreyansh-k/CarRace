@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Car Racing Game</title>
+<title>APEX HORIZON</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Orbitron:wght@400;700;900&display=swap');
 *{margin:0;padding:0;box-sizing:border-box}
@@ -133,7 +133,7 @@ canvas{display:block}
 
 <div id="loading">
   <div class="load-icon">🏎️</div>
-  <h2>Car Racing Game</h2>
+  <h2>APEX HORIZON</h2>
   <div class="load-bar"><div class="load-fill" id="loadFill" style="width:0%"></div></div>
   <div class="load-text" id="loadText">INITIALISING...</div>
   <div style="margin-top:22px;color:#1a2a3a;font-size:11px;letter-spacing:1px;text-align:center;max-width:420px;line-height:1.8">
@@ -342,53 +342,38 @@ const MODEL_FILES={
 // ══════════════════════════════════════════
 // AUDIO
 // ══════════════════════════════════════════
-let actx,masterG,engOscs=[],engGs=[],engG;
+let actx,masterG,engOsc,engOsc2,engG;
 function initAudio(){
   if(actx)return;
   actx=new(window.AudioContext||window.webkitAudioContext)();
   masterG=actx.createGain();masterG.gain.value=0.28;masterG.connect(actx.destination);
-  engG=actx.createGain();engG.gain.value=0;engG.connect(masterG);
   
-  // Multi-layer engine: 4 harmonically-related oscillators for rich texture
-  const harmonics=[1,1.5,2.8,4.2]; // engine harmonics
-  const types=['sawtooth','triangle','sine','triangle'];
-  harmonics.forEach((h,idx)=>{
-    const osc=actx.createOscillator();
-    osc.type=types[idx];osc.frequency.value=80*h;
-    const g=actx.createGain();g.gain.value=[0.45,0.25,0.15,0.12][idx];
-    osc.connect(g);g.connect(engG);
-    engOscs.push(osc);engGs.push(g);
-    osc.start();
-  });
+  // Main sawtooth engine sound
+  engOsc=actx.createOscillator();engOsc.type='sawtooth';engOsc.frequency.value=85;
+  // Secondary harmonic for richness
+  engOsc2=actx.createOscillator();engOsc2.type='triangle';engOsc2.frequency.value=130;
   
-  // Heavy distortion for "rough" engine character
+  engG=actx.createGain();engG.gain.value=0;
+  
+  // Connect oscillators with gain mixing
+  const g1=actx.createGain();g1.gain.value=0.65;engOsc.connect(g1);g1.connect(engG);
+  const g2=actx.createGain();g2.gain.value=0.35;engOsc2.connect(g2);g2.connect(engG);
+  
+  // Gentle distortion for engine character (not aggressive)
   const dist=actx.createWaveShaper();
-  const curve=new Float32Array(256);
-  for(let i=0;i<256;i++){
-    const x=(i-128)/128;
-    // Asymmetric soft clipping for engine growl
-    const y=x<0?Math.tanh(x*3.8):(Math.tanh(x*2.2)+x*0.35);
-    curve[i]=y;
-  }
-  dist.curve=curve;
+  const arr=new Float32Array(256);
+  for(let i=0;i<256;i++)arr[i]=Math.tanh((i-128)/50);
+  dist.curve=arr;
   engG.connect(dist);dist.connect(masterG);
   
-  // LFO for engine vibration/pulsing (subtle)
-  const lfo=actx.createOscillator();lfo.frequency.value=5.2;
-  const lfoGain=actx.createGain();lfoGain.gain.value=0.035;
-  lfo.connect(lfoGain);lfoGain.connect(engG.gain);
-  lfo.start();
+  engOsc.start();engOsc2.start();
 }
 function setEngine(spd,thr){
   if(!actx)return;
-  const baseFq=80;
-  const harmonics=[1,1.5,2.8,4.2];
-  const fqMod=120+spd*32; // frequency modulation with speed
-  harmonics.forEach((h,i)=>{
-    engOscs[i].frequency.setTargetAtTime(baseFq*h+fqMod*h*0.15,actx.currentTime,0.08);
-  });
-  const gain=thr>0?0.095:0.025;
-  engG.gain.setTargetAtTime(gain,actx.currentTime,0.12);
+  const fq=85+spd*35;
+  engOsc.frequency.setTargetAtTime(fq,actx.currentTime,0.08);
+  engOsc2.frequency.setTargetAtTime(fq*1.53,actx.currentTime,0.08);
+  engG.gain.setTargetAtTime(thr>0?0.08:0.025,actx.currentTime,0.12);
 }
 function sndCrash(f){if(!actx)return;const b=actx.createBuffer(1,actx.sampleRate*0.25,actx.sampleRate);const d=b.getChannelData(0);for(let i=0;i<b.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i*12/b.length);const s=actx.createBufferSource(),g=actx.createGain(),fl=actx.createBiquadFilter();fl.type='lowpass';fl.frequency.value=700;s.buffer=b;s.connect(fl);fl.connect(g);g.connect(masterG);g.gain.setValueAtTime(Math.min(f,0.7),actx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.25);s.start();}
 function sndCoin(){if(!actx)return;[523,784,1047].forEach((f,i)=>{const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=f;o.connect(g);g.connect(masterG);g.gain.setValueAtTime(0.1,actx.currentTime+i*0.07);g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.35+i*0.07);o.start(actx.currentTime+i*0.07);o.stop(actx.currentTime+0.4+i*0.07);});}
@@ -732,8 +717,8 @@ function buildAI(){
   aiRacers=[];
   for(let i=0;i<4;i++){
     const meta=currentAIMeta[i];
-    // START ALL AI AT THE STARTING LINE (different z offsets)
-    const startZ=8+(i-1.5)*3.2;
+    // START ALL AI AT THE STARTING LINE (spread out more)
+    const startZ=8+(i-1.5)*6.5;
     const g=new THREE.Group();
     const wrap=new THREE.Group();wrap.rotation.y=Math.PI;
     wrap.add(cloneM(meta.key,meta.col));
@@ -1095,6 +1080,7 @@ function updateHUD(){
   }
   document.getElementById('wrong-way').style.display=wrongWay&&raceStarted?'block':'none';
   document.getElementById('race-prompt').style.display=(nearSF&&!raceStarted&&!countdownActive&&!raceFinished&&gameMode==='race')?'block':'none';
+  if(gameMode==='race'&&nearSF&&!raceStarted&&!countdownActive&&!raceFinished)beginCountdown();
   ffr++;const now=Date.now();if(now-flt>=1000){document.getElementById('fpsDisp').textContent=ffr;ffr=0;flt=now;}
   updateMinimap();updateStandings();
 }
@@ -1177,11 +1163,7 @@ function onKD(e){
   const k=e.key.toLowerCase();
   if(!keys[k]){
     if(k==='c')camMode=(camMode+1)%3;
-    if(k==='r'){
-      if(gameMode==='practice')resetPlayer();
-      else if(nearSF&&!raceStarted&&!countdownActive&&!raceFinished)beginCountdown();
-      else resetPlayer();
-    }
+    if(k==='r')resetPlayer();
     if(k==='escape')backToMenu();
   }
   keys[k]=true;
