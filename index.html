@@ -127,6 +127,38 @@ canvas{display:block}
 .mode-btn:hover{border-color:#00d4ff44;color:#00d4ff}
 #practice-info{position:fixed;top:20px;left:50%;transform:translateX(-50%);font-family:'Orbitron',sans-serif;font-size:13px;color:#00ff99;letter-spacing:3px;display:none;text-align:center}
 #lap-ghost{font-size:11px;color:#446;margin-top:4px;letter-spacing:2px}
+/* ── MOBILE CONTROLS ── */
+@media (max-width: 768px) {
+  .game-logo{font-size:48px}
+  .biome-grid{flex-direction:column;gap:10px}
+  .biome-card{width:120px}
+  .start-btn{padding:14px 50px;font-size:15px}
+  .hint{font-size:11px}
+  .cs-title{font-size:32px}
+  .car-grid{max-width:90vw;gap:10px}
+  .car-card{width:140px;padding:12px 8px}
+  .fin-table{min-width:320px}
+  .fin-table th,.fin-table td{font-size:12px;padding:6px 10px}
+  #tl-info{top:10px;left:10px;font-size:11px}
+  #left-hud{bottom:200px;left:10px;font-size:11px}
+  #standings{top:10px;right:10px;min-width:160px;padding:8px 10px}
+  #speedo-wrap{bottom:120px;width:220px}
+  .sp-num{font-size:64px}
+  .gear-b{font-size:16px}
+  #minimap{bottom:10px;right:10px;width:120px;height:120px}
+  #dmg-wrap{bottom:200px;right:10px}
+  .dmg-bg{width:60px}
+  .dmg-lbl{width:45px}
+}
+#mobile-controls{position:fixed;bottom:0;left:0;width:100%;height:150px;pointer-events:none;z-index:200;display:none}
+.mobile-btn{position:absolute;width:80px;height:80px;border-radius:50%;background:rgba(0,212,255,0.2);border:3px solid #00d4ff;color:#00d4ff;font-size:24px;display:flex;align-items:center;justify-content:center;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;transition:all 0.1s}
+.mobile-btn:active{background:rgba(0,212,255,0.4);transform:scale(0.95)}
+#throttle-btn{bottom:20px;left:20px}
+#brake-btn{bottom:20px;left:120px}
+#steer-left{bottom:20px;right:120px}
+#steer-right{bottom:20px;right:20px}
+#hard-brake-btn{top:20px;left:50%;transform:translateX(-50%);width:100px;height:50px;border-radius:25px;font-size:18px;letter-spacing:2px}
+.mobile-hint{position:fixed;top:10px;left:50%;transform:translateX(-50%);color:#00d4ff66;font-size:12px;letter-spacing:2px;text-align:center;display:none}
 </style>
 </head>
 <body>
@@ -155,7 +187,7 @@ canvas{display:block}
       <div class="biome-card" onclick="selectBiome(2,this)"><div class="biome-icon">🌨️</div><div class="biome-name">ARCTIC</div><div class="biome-desc">Ice Ring</div></div>
     </div>
     <button class="start-btn" onclick="goToCarSelect()">▶ SELECT CAR</button>
-    <div class="hint">W/↑ Throttle · S/↓ Brake · A/D Steer · SPACE Hard Brake · C Camera · R Reset/Race</div>
+    <div class="hint" id="control-hint">W/↑ Throttle · S/↓ Brake · A/D Steer · SPACE Hard Brake · C Camera · R Reset/Race</div>
   </div>
 </div>
 
@@ -208,6 +240,15 @@ canvas{display:block}
     <span id="lap-ghost"></span>
   </div>
   <div id="crash-overlay"></div>
+  <!-- MOBILE CONTROLS -->
+  <div id="mobile-controls">
+    <div id="throttle-btn" class="mobile-btn">⏫</div>
+    <div id="brake-btn" class="mobile-btn">⏬</div>
+    <div id="steer-left" class="mobile-btn">⬅</div>
+    <div id="steer-right" class="mobile-btn">➡</div>
+    <div id="hard-brake-btn" class="mobile-btn">STOP</div>
+  </div>
+  <div id="mobile-hint">TAP BUTTONS TO DRIVE</div>
 </div>
 
 <div id="finish-screen">
@@ -239,7 +280,7 @@ const BIOMES=[
 let selectedBiome=0,scene,camera,renderer,clock;
 let playerGroup,modelWrapper;
 let vel={x:0,z:0},carYaw=Math.PI;
-let carSpeed=0,carGear='N';
+let carSpeed=0,carGear='N',prevGear='N';
 let keys={},camMode=0;
 let bodyDmg=0,engDmg=0,coinCount=0;
 let gameTime=360;
@@ -276,32 +317,32 @@ const PLAYER_CARS=[
   {
     id:'c1', file:'1.glb', name:'NISSAN 370Z', maker:'NISSAN', class:'A', col:0xcc2211, maxSpd:82, accel:1.5, handling:1.3,
     desc:'Rear-wheel drive · Pure sports',
-    logoSvg:'<svg width="40" height="40" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="45" fill="%23cc2211"/><text x="50" y="68" font-size="48" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">Z</text></svg>'
+    logoPng:'nissan.png'
   },
   {
     id:'c2', file:'2.glb', name:'LANCER EVO', maker:'MITSUBISHI', class:'S', col:0x0033cc, maxSpd:90, accel:1.7, handling:1.4,
     desc:'AWD rally legend · Technical',
-    logoSvg:'<svg width="40" height="40" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="45" fill="%230033cc"/><polygon points="50,20 80,80 20,80" fill="white"/></svg>'
+    logoPng:'mitsubishi.png'
   },
   {
     id:'c3', file:'3.glb', name:'TATA PUNCH', maker:'TATA', class:'C', col:0xff6600, maxSpd:55, accel:0.95, handling:1.0,
     desc:'Compact SUV · Everyday driver',
-    logoSvg:'<svg width="40" height="40" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="%23ff6600" rx="8"/><circle cx="50" cy="50" r="30" fill="white"/></svg>'
+    logoPng:'tata.png'
   },
   {
     id:'c4', file:'4.glb', name:'MUSTANG GT', maker:'FORD', class:'S', col:0x0055aa, maxSpd:88, accel:1.6, handling:1.1,
     desc:'V8 muscle · American icon',
-    logoSvg:'<svg width="40" height="40" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="%230055aa" rx="8"/><polygon points="50,15 85,75 15,75" fill="%23ffff00"/></svg>'
+    logoPng:'ford.png'
   },
   {
     id:'c5', file:'5.glb', name:'TOYOTA GR', maker:'TOYOTA', class:'A', col:0xcc0000, maxSpd:78, accel:1.35, handling:1.25,
     desc:'GAZOO Racing · Motorsport DNA',
-    logoSvg:'<svg width="40" height="40" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="45" fill="%23cc0000"/><circle cx="50" cy="50" r="28" fill="white"/><text x="50" y="62" font-size="32" font-weight="bold" text-anchor="middle" fill="%23cc0000" font-family="Arial">GR</text></svg>'
+    logoPng:'toyota.png'
   },
   {
     id:'gumpert', file:'2012_gumpert_apollo_enraged.glb', name:'APOLLO ENRAGED', maker:'GUMPERT', class:'S', col:0xff0044, maxSpd:95, accel:1.8, handling:1.15,
     desc:'Track weapon · 700bhp monster',
-    logoSvg:'<svg width="40" height="40" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><polygon points="50,10 90,90 10,90" fill="%23ff0044"/><circle cx="50" cy="65" r="15" fill="white"/></svg>'
+    logoPng:'apollo.png'
   },
 ];
 let selectedCarIdx=0;
@@ -337,44 +378,126 @@ const MODEL_FILES={
 // ══════════════════════════════════════════
 // AUDIO
 // ══════════════════════════════════════════
-let actx,masterG,engOsc,engOsc2,engG;
+let actx,masterG,engOsc,engOsc2,engOsc3,engG,engFilter,engLFO;
 function initAudio(){
   if(actx)return;
   actx=new(window.AudioContext||window.webkitAudioContext)();
   masterG=actx.createGain();masterG.gain.value=0.28;masterG.connect(actx.destination);
   
-  // Main sawtooth engine sound
+  // Enhanced engine sound with multiple harmonics
   engOsc=actx.createOscillator();engOsc.type='sawtooth';engOsc.frequency.value=85;
-  // Secondary harmonic for richness
   engOsc2=actx.createOscillator();engOsc2.type='triangle';engOsc2.frequency.value=130;
+  engOsc3=actx.createOscillator();engOsc3.type='square';engOsc3.frequency.value=65;
   
   engG=actx.createGain();engG.gain.value=0;
   
-  // Connect oscillators with gain mixing
-  const g1=actx.createGain();g1.gain.value=0.65;engOsc.connect(g1);g1.connect(engG);
-  const g2=actx.createGain();g2.gain.value=0.35;engOsc2.connect(g2);g2.connect(engG);
+  // Low-pass filter for engine character
+  engFilter=actx.createBiquadFilter();
+  engFilter.type='lowpass';
+  engFilter.frequency.value=2000;
+  engFilter.Q.value=1.2;
   
-  // Gentle distortion for engine character (not aggressive)
+  // LFO for subtle engine vibration
+  engLFO=actx.createOscillator();engLFO.type='sine';engLFO.frequency.value=25;
+  const lfoGain=actx.createGain();lfoGain.gain.value=0.1;
+  engLFO.connect(lfoGain);
+  lfoGain.connect(engFilter.frequency);
+  
+  // Connect oscillators with gain mixing
+  const g1=actx.createGain();g1.gain.value=0.5;engOsc.connect(g1);g1.connect(engFilter);
+  const g2=actx.createGain();g2.gain.value=0.3;engOsc2.connect(g2);g2.connect(engFilter);
+  const g3=actx.createGain();g3.gain.value=0.2;engOsc3.connect(g3);g3.connect(engFilter);
+  
+  // Wave shaper for subtle distortion
   const dist=actx.createWaveShaper();
   const arr=new Float32Array(256);
-  for(let i=0;i<256;i++)arr[i]=Math.tanh((i-128)/50);
+  for(let i=0;i<256;i++)arr[i]=Math.tanh((i-128)/40);
   dist.curve=arr;
-  engG.connect(dist);dist.connect(masterG);
   
-  engOsc.start();engOsc2.start();
+  engFilter.connect(dist);dist.connect(engG);engG.connect(masterG);
+  
+  engOsc.start();engOsc2.start();engOsc3.start();engLFO.start();
 }
 function setEngine(spd,thr){
   if(!actx)return;
-  const fq=85+spd*35;
-  engOsc.frequency.setTargetAtTime(fq,actx.currentTime,0.08);
-  engOsc2.frequency.setTargetAtTime(fq*1.53,actx.currentTime,0.08);
-  engG.gain.setTargetAtTime(thr>0?0.08:0.025,actx.currentTime,0.12);
+  // Dynamic RPM calculation based on speed and throttle
+  const baseRPM = 800 + spd * 120; // Base RPM from 800 to ~2000
+  const throttleRPM = thr > 0 ? baseRPM + thr * 400 : baseRPM * 0.7; // Higher RPM when accelerating
+  
+  // Update oscillator frequencies for realistic harmonics
+  const fundamental = Math.max(60, throttleRPM / 20); // Fundamental frequency
+  engOsc.frequency.setTargetAtTime(fundamental, actx.currentTime, 0.05);
+  engOsc2.frequency.setTargetAtTime(fundamental * 1.5, actx.currentTime, 0.05); // Octave + fifth
+  engOsc3.frequency.setTargetAtTime(fundamental * 0.75, actx.currentTime, 0.05); // Sub-harmonic
+  
+  // Dynamic filter based on RPM
+  const filterFreq = Math.min(3000, 800 + throttleRPM * 0.8);
+  engFilter.frequency.setTargetAtTime(filterFreq, actx.currentTime, 0.1);
+  
+  // Engine volume based on throttle and speed
+  const volume = Math.min(0.12, (spd * 0.002) + (Math.abs(thr) * 0.08));
+  engG.gain.setTargetAtTime(volume, actx.currentTime, 0.08);
+  
+  // Update RPM display
+  document.getElementById('rpmNum').textContent = Math.round(throttleRPM);
 }
 function sndCrash(f){if(!actx)return;const b=actx.createBuffer(1,actx.sampleRate*0.25,actx.sampleRate);const d=b.getChannelData(0);for(let i=0;i<b.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i*12/b.length);const s=actx.createBufferSource(),g=actx.createGain(),fl=actx.createBiquadFilter();fl.type='lowpass';fl.frequency.value=700;s.buffer=b;s.connect(fl);fl.connect(g);g.connect(masterG);g.gain.setValueAtTime(Math.min(f,0.7),actx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.25);s.start();}
 function sndCoin(){if(!actx)return;[523,784,1047].forEach((f,i)=>{const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=f;o.connect(g);g.connect(masterG);g.gain.setValueAtTime(0.1,actx.currentTime+i*0.07);g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.35+i*0.07);o.start(actx.currentTime+i*0.07);o.stop(actx.currentTime+0.4+i*0.07);});}
 function sndHorn(){if(!actx)return;const o=actx.createOscillator(),g=actx.createGain();o.type='square';o.frequency.value=440;o.connect(g);g.connect(masterG);g.gain.setValueAtTime(0.08,actx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.28);o.start();o.stop(actx.currentTime+0.28);}
 function sndBeep(f,v=0.2){if(!actx)return;const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=f;o.connect(g);g.connect(masterG);g.gain.setValueAtTime(v,actx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.2);o.start();o.stop(actx.currentTime+0.25);}
-function sndCheer(){if(!actx)return;const freqs=[440,550,660,550];freqs.forEach((f,i)=>{const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=f;o.connect(g);g.connect(masterG);g.gain.setValueAtTime(0.12,actx.currentTime+i*0.12);g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.65+i*0.12);o.start(actx.currentTime+i*0.12);o.stop(actx.currentTime+0.75+i*0.12);});}
+function sndCheer(){
+  if(!actx)return;
+  // More exciting crowd cheer with multiple voices and harmonics
+  const cheerPatterns = [
+    [440, 550, 660, 880], // "Woo!"
+    [330, 440, 550, 660], // "Yeah!"
+    [523, 659, 784, 988] // "Go go!"
+  ];
+  const pattern = cheerPatterns[Math.floor(Math.random() * cheerPatterns.length)];
+  
+  pattern.forEach((f,i)=>{
+    // Main voice
+    const o1=actx.createOscillator(), g1=actx.createGain();
+    o1.type='sawtooth'; o1.frequency.value=f;
+    o1.connect(g1); g1.connect(masterG);
+    g1.gain.setValueAtTime(0.08, actx.currentTime + i*0.08);
+    g1.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.4 + i*0.08);
+    o1.start(actx.currentTime + i*0.08);
+    o1.stop(actx.currentTime + 0.45 + i*0.08);
+    
+    // Harmonic for richness
+    const o2=actx.createOscillator(), g2=actx.createGain();
+    o2.type='triangle'; o2.frequency.value=f * 2;
+    o2.connect(g2); g2.connect(masterG);
+    g2.gain.setValueAtTime(0.04, actx.currentTime + i*0.08);
+    g2.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.4 + i*0.08);
+    o2.start(actx.currentTime + i*0.08);
+    o2.stop(actx.currentTime + 0.45 + i*0.08);
+  });
+  
+  // Add some random background cheers
+  for(let i=0; i<3; i++){
+    const delay = Math.random() * 0.3;
+    const freq = 200 + Math.random() * 400;
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type='sine'; o.frequency.value=freq;
+    o.connect(g); g.connect(masterG);
+    g.gain.setValueAtTime(0.02, actx.currentTime + delay);
+    g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.2 + delay);
+    o.start(actx.currentTime + delay);
+  }
+}
+function sndGearShift(){
+  if(!actx)return;
+  // Quick gear shift sound
+  const o=actx.createOscillator(), g=actx.createGain();
+  o.type='sawtooth'; o.frequency.setValueAtTime(800, actx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(200, actx.currentTime + 0.1);
+  o.connect(g); g.connect(masterG);
+  g.gain.setValueAtTime(0.15, actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.1);
+  o.start(); o.stop(actx.currentTime + 0.1);
+}
 
 // ══════════════════════════════════════════
 // MENU & CAR SELECT
@@ -409,13 +532,15 @@ function buildCarGrid(){
     const card=document.createElement('div');
     card.className='car-card'+(i===selectedCarIdx?' selected':'');
     
-    // Create SVG properly using DOM instead of innerHTML
+    // Create logo from PNG
     const logoWrap=document.createElement('div');
     logoWrap.className='car-logo-wrap';
-    if(c.logoSvg){
-      const svgDiv=document.createElement('div');
-      svgDiv.innerHTML=c.logoSvg;
-      logoWrap.appendChild(svgDiv);
+    if(c.logoPng){
+      const img=document.createElement('img');
+      img.src=c.logoPng;
+      img.alt=c.maker;
+      img.style.cssText='width:100%;height:100%;object-fit:contain;';
+      logoWrap.appendChild(img);
     } else {
       logoWrap.innerHTML='<span class="car-logo-fallback">⚡</span>';
     }
@@ -476,6 +601,8 @@ function backToMenu(){
   document.getElementById('finish-screen').style.display='none';
   document.getElementById('car-select').style.display='none';
   document.getElementById('menu').classList.remove('hidden');
+  document.getElementById('mobile-controls').style.display='none';
+  document.getElementById('mobile-hint').style.display='none';
   if(renderer){renderer.domElement.remove();renderer.dispose();renderer=null;}
   isRunning=false;raceStarted=false;raceFinished=false;lapCount=0;bodyDmg=0;engDmg=0;coinCount=0;
   vel.x=0;vel.z=0;aiRacers=[];solidObs=[];coinList=[];spectators=[];snowPoints=null;
@@ -614,6 +741,16 @@ function initGame(bi){
   document.getElementById('minimap').style.display='block';
   document.getElementById('dmg-wrap').style.display='block';
   window.addEventListener('keydown',onKD);window.addEventListener('keyup',onKU);window.addEventListener('resize',onResize);
+  
+  // Mobile controls
+  const isMobile=/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)||window.innerWidth<768;
+  if(isMobile){
+    document.getElementById('mobile-controls').style.display='block';
+    document.getElementById('mobile-hint').style.display='block';
+    document.getElementById('control-hint').textContent='TAP BUTTONS TO DRIVE · C Camera · R Reset/Race';
+    setupMobileControls();
+  }
+  
   isRunning=true;animate();
 }
 
@@ -802,10 +939,14 @@ function updatePlayer(dt){
   if(isSpc)thr=0;
   if(countdownActive)thr=0;
   // ── CROWD CHEER DETECTION ──
-  const nearGrandstand0=Math.hypot(playerGroup.position.x-0,playerGroup.position.z+(TRACK_R-70))<35;
-  const nearGrandstand1=Math.hypot(playerGroup.position.x-0,playerGroup.position.z-(TRACK_R-70))<35;
-  const nearCrowd=nearGrandstand0||nearGrandstand1;
-  if(raceStarted&&nearCrowd&&Date.now()-lastCrowdCheerT>3000){sndCheer();lastCrowdCheerT=Date.now();}
+  const nearGrandstand0 = Math.hypot(playerGroup.position.x-0, playerGroup.position.z+(TRACK_R-70)) < 35;
+  const nearGrandstand1 = Math.hypot(playerGroup.position.x-0, playerGroup.position.z-(TRACK_R-70)) < 35;
+  const nearCrowd = nearGrandstand0 || nearGrandstand1;
+  // Trigger cheer when passing crowd at speed (not just being near)
+  if(raceStarted && nearCrowd && spd > 15 && Date.now() - lastCrowdCheerT > 3000){
+    sndCheer();
+    lastCrowdCheerT = Date.now();
+  }
   const spd=Math.sqrt(vel.x*vel.x+vel.z*vel.z);
   // Accelerate
   const acc=CAR_ACCEL*thr*dt;
@@ -870,7 +1011,12 @@ function updatePlayer(dt){
   playerGroup.position.y=0;playerGroup.rotation.y=carYaw;
   wheelT+=curSpd*0.05*dt*60;
   setEngine(curSpd,thr);
-  carSpeed=Math.round(curSpd*3.6);carGear=curSpd<1?'N':Math.min(8,Math.max(1,Math.ceil(curSpd/12)));
+  const newGear = curSpd<1?'N':Math.min(8,Math.max(1,Math.ceil(curSpd/12)));
+  if(newGear !== carGear && raceStarted && newGear !== 'N'){
+    sndGearShift();
+  }
+  carGear = newGear;
+  carSpeed=Math.round(curSpd*3.6);
   if(curSpd>60)engDmg=Math.min(100,engDmg+0.005);
   if(crashAlpha>0)crashAlpha=Math.max(0,crashAlpha-0.04);
   document.getElementById('crash-overlay').style.background=crashAlpha>0?`rgba(255,50,0,${crashAlpha.toFixed(2)})`:'none';
@@ -1097,7 +1243,7 @@ function updateCamera(){
 // ══════════════════════════════════════════
 let ffr=0,flt=0;
 function updateHUD(){
-  document.getElementById('speedNum').textContent=carSpeed;document.getElementById('gearNum').textContent=carGear;document.getElementById('rpmNum').textContent=Math.round(carSpeed*75);
+  document.getElementById('speedNum').textContent=carSpeed;document.getElementById('gearNum').textContent=carGear;
   document.getElementById('coinsDisp').textContent=coinCount;document.getElementById('bodyPct').textContent=Math.round(bodyDmg);document.getElementById('engPct').textContent=Math.round(engDmg);
   const bd=document.getElementById('bodyBar');bd.style.width=bodyDmg+'%';bd.style.background=bodyDmg>65?'#ff3300':bodyDmg>35?'#ffaa00':'#00ff99';
   document.getElementById('engBar').style.width=engDmg+'%';
@@ -1199,6 +1345,45 @@ function onKD(e){
   if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key))e.preventDefault();
 }
 function onKU(e){keys[e.key.toLowerCase()]=false;}
+function setupMobileControls(){
+  const throttleBtn=document.getElementById('throttle-btn');
+  const brakeBtn=document.getElementById('brake-btn');
+  const steerLeftBtn=document.getElementById('steer-left');
+  const steerRightBtn=document.getElementById('steer-right');
+  const hardBrakeBtn=document.getElementById('hard-brake-btn');
+  
+  // Touch start handlers
+  throttleBtn.addEventListener('touchstart',e=>{e.preventDefault();keys['w']=true;keys['arrowup']=true;});
+  brakeBtn.addEventListener('touchstart',e=>{e.preventDefault();keys['s']=true;keys['arrowdown']=true;});
+  steerLeftBtn.addEventListener('touchstart',e=>{e.preventDefault();keys['a']=true;keys['arrowleft']=true;});
+  steerRightBtn.addEventListener('touchstart',e=>{e.preventDefault();keys['d']=true;keys['arrowright']=true;});
+  hardBrakeBtn.addEventListener('touchstart',e=>{e.preventDefault();keys[' ']=true;});
+  
+  // Touch end handlers
+  throttleBtn.addEventListener('touchend',e=>{e.preventDefault();keys['w']=false;keys['arrowup']=false;});
+  brakeBtn.addEventListener('touchend',e=>{e.preventDefault();keys['s']=false;keys['arrowdown']=false;});
+  steerLeftBtn.addEventListener('touchend',e=>{e.preventDefault();keys['a']=false;keys['arrowleft']=false;});
+  steerRightBtn.addEventListener('touchend',e=>{e.preventDefault();keys['d']=false;keys['arrowright']=false;});
+  hardBrakeBtn.addEventListener('touchend',e=>{e.preventDefault();keys[' ']=false;});
+  
+  // Mouse events for desktop testing
+  throttleBtn.addEventListener('mousedown',()=>{keys['w']=true;keys['arrowup']=true;});
+  brakeBtn.addEventListener('mousedown',()=>{keys['s']=true;keys['arrowdown']=true;});
+  steerLeftBtn.addEventListener('mousedown',()=>{keys['a']=true;keys['arrowleft']=true;});
+  steerRightBtn.addEventListener('mousedown',()=>{keys['d']=true;keys['arrowright']=true;});
+  hardBrakeBtn.addEventListener('mousedown',()=>{keys[' ']=true;});
+  
+  throttleBtn.addEventListener('mouseup',()=>{keys['w']=false;keys['arrowup']=false;});
+  brakeBtn.addEventListener('mouseup',()=>{keys['s']=false;keys['arrowdown']=false;});
+  steerLeftBtn.addEventListener('mouseup',()=>{keys['a']=false;keys['arrowleft']=false;});
+  steerRightBtn.addEventListener('mouseup',()=>{keys['d']=false;keys['arrowright']=false;});
+  hardBrakeBtn.addEventListener('mouseup',()=>{keys[' ']=false;});
+  
+  // Prevent context menu on mobile controls
+  [throttleBtn,brakeBtn,steerLeftBtn,steerRightBtn,hardBrakeBtn].forEach(btn=>{
+    btn.addEventListener('contextmenu',e=>e.preventDefault());
+  });
+}
 function resetPlayer(){
   playerGroup.position.set(TRACK_R,0,8);carYaw=Math.PI;playerGroup.rotation.y=carYaw;
   vel.x=0;vel.z=0;bodyDmg=0;crashAlpha=0;
