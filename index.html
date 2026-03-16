@@ -350,9 +350,9 @@ let selectedCarIdx=0;
 // AI picks 4 cars that are NOT the player's car, difficulty scales with player's maxSpd
 function buildAIMeta(){
   const playerCar=PLAYER_CARS[selectedCarIdx];
-  // AI top speed = 90-105% of player top speed (scales with player choice)
+  // AI top speed = 75-85% of player top speed (easier to beat)
   const spdScale=playerCar.maxSpd/90;
-  const aggression=0.82+spdScale*0.2; // faster player car = more aggressive AI
+  const aggression=0.65+spdScale*0.15; // less aggressive AI
   // Pick 4 different cars for opponents (skip player's car)
   const pool=PLAYER_CARS.filter((_,i)=>i!==selectedCarIdx);
   // Shuffle and take 4
@@ -360,8 +360,8 @@ function buildAIMeta(){
   return shuffled.map((c,i)=>({
     key:c.id, name:c.name, col:c.col,
     // Base speed = player max * aggression, slight variation per slot
-    baseSpd:playerCar.maxSpd*aggression*(0.92+i*0.04),
-    var:playerCar.maxSpd*0.06
+    baseSpd:playerCar.maxSpd*aggression*(0.88+i*0.03),
+    var:playerCar.maxSpd*0.04
   }));
 }
 
@@ -883,13 +883,14 @@ function buildAI(){
   aiRacers=[];
   for(let i=0;i<4;i++){
     const meta=currentAIMeta[i];
-    // START ALL AI AT THE STARTING LINE (spread out more)
-    const startZ=8+(i-1.5)*6.5;
+    // START ALL AI IN A HORIZONTAL LINE ACROSS THE TRACK
+    const startX = TRACK_R + (i - 1.5) * 12; // Spread horizontally
+    const startZ = 8; // All at same Z position
     const g=new THREE.Group();
     const wrap=new THREE.Group();wrap.rotation.y=Math.PI;
     wrap.add(cloneM(meta.key,meta.col));
     g.add(wrap);
-    g.position.set(TRACK_R,0,startZ);
+    g.position.set(startX,0,startZ);
     const ty=Math.PI;
     g.rotation.y=ty;
     scene.add(g);
@@ -901,7 +902,7 @@ function buildAI(){
       lapStartT:0, hornCD:0, meta,
       velX:0, velZ:0, crashTimer:0,
       aiTotalAngle:0, aiLastAngle:undefined, aiLapAccum:0,
-      aggrFactor:0.85+Math.random()*0.25
+      aggrFactor:0.6+Math.random()*0.2 // Reduced aggression
     });
   }
 }
@@ -938,6 +939,7 @@ function updatePlayer(dt){
   if(keys['a']||keys['arrowleft'])steer=1;if(keys['d']||keys['arrowright'])steer=-1;
   if(isSpc)thr=0;
   if(countdownActive)thr=0;
+  const spd=Math.sqrt(vel.x*vel.x+vel.z*vel.z);
   // ── CROWD CHEER DETECTION ──
   const nearGrandstand0 = Math.hypot(playerGroup.position.x-0, playerGroup.position.z+(TRACK_R-70)) < 35;
   const nearGrandstand1 = Math.hypot(playerGroup.position.x-0, playerGroup.position.z-(TRACK_R-70)) < 35;
@@ -947,7 +949,6 @@ function updatePlayer(dt){
     sndCheer();
     lastCrowdCheerT = Date.now();
   }
-  const spd=Math.sqrt(vel.x*vel.x+vel.z*vel.z);
   // Accelerate
   const acc=CAR_ACCEL*thr*dt;
   vel.x-=acc*Math.sin(carYaw);vel.z-=acc*Math.cos(carYaw);
@@ -1079,10 +1080,10 @@ function updateAI(dt){
   const playerCar=PLAYER_CARS[selectedCarIdx];
 
   aiRacers.forEach(ai=>{
-    // ── Stuck detection: if barely moving >2s, snap to nearest forward WP ──
+    // ── Stuck detection: if barely moving >1.5s, snap to nearest forward WP ──
     ai.stuckTimer=(ai.stuckTimer||0);
-    if(ai.speed<3&&raceStarted) ai.stuckTimer+=dt; else ai.stuckTimer=0;
-    if(ai.stuckTimer>2){
+    if(ai.speed<2&&raceStarted) ai.stuckTimer+=dt; else ai.stuckTimer=0;
+    if(ai.stuckTimer>1.5){
       let bestIdx=0,bestDot=-Infinity;
       WPS.forEach((w,idx)=>{
         const dx=w.x-ai.mesh.position.x,dz=w.z-ai.mesh.position.z;
@@ -1090,39 +1091,41 @@ function updateAI(dt){
         if(dot>bestDot){bestDot=dot;bestIdx=idx;}
       });
       ai.wpIdx=bestIdx;ai.velX=0;ai.velZ=0;ai.stuckTimer=0;
+      // Snap to track radius
       const ang=Math.atan2(ai.mesh.position.z,ai.mesh.position.x);
       ai.mesh.position.set(Math.cos(ang)*TRACK_R,0,Math.sin(ang)*TRACK_R);
+      ai.speed = 5; // Give a small speed boost to get moving
     }
 
     // ── Waypoint steering: single target only (no blending = no behind-spin) ──
     const wp=WPS[ai.wpIdx];
     const dx=wp.x-ai.mesh.position.x, dz=wp.z-ai.mesh.position.z;
     const d=Math.sqrt(dx*dx+dz*dz);
-    if(d<22) ai.wpIdx=(ai.wpIdx+1)%WPS.length;
+    if(d<18) ai.wpIdx=(ai.wpIdx+1)%WPS.length; // Smaller threshold for better following
 
     const tYaw=Math.atan2(-dx,-dz);
     let yd=tYaw-ai.yaw;
     while(yd>Math.PI)yd-=Math.PI*2;
     while(yd<-Math.PI)yd+=Math.PI*2;
-    // Hard clamp: max 5deg/frame so car cannot spin
-    ai.yaw+=Math.max(-0.088,Math.min(0.088,yd*0.11));
+    // Smoother steering: max 3deg/frame for more realistic turns
+    ai.yaw+=Math.max(-0.052,Math.min(0.052,yd*0.08));
 
-    // ── Speed: hard baseline 80% player car maxSpd, ignores playerAvgSpeed until race ──
-    const hardBase=playerCar.maxSpd*0.82;
-    const softRef=(raceStarted&&playerAvgSpeed>8)?playerAvgSpeed:hardBase;
+    // ── Speed: easier baseline 70% player car maxSpd ──
+    const hardBase=playerCar.maxSpd*0.7;
+    const softRef=(raceStarted&&playerAvgSpeed>8)?playerAvgSpeed*0.9:hardBase;
     const refSpd=Math.max(hardBase,softRef);
 
     if(ai.crashTimer>0){
       ai.crashTimer-=dt;
-      ai.speed=Math.max(ai.speed*0.97,5);
+      ai.speed=Math.max(ai.speed*0.95,3); // Recover faster
     } else {
       const gap=(lapAngleAccum||0)-(ai.aiLapAccum||0)+(lapCount-ai.lapCount)*Math.PI*2;
-      const rb=Math.tanh(gap*0.15)*refSpd*0.10;
-      const targetSpd=Math.min(refSpd*ai.aggrFactor+rb, playerCar.maxSpd*1.05);
-      ai.speed+=(targetSpd-ai.speed)*0.08;
+      const rb=Math.tanh(gap*0.12)*refSpd*0.08; // Less aggressive gap closing
+      const targetSpd=Math.min(refSpd*ai.aggrFactor+rb, playerCar.maxSpd*0.9); // Cap at 90% of player max
+      ai.speed+=(targetSpd-ai.speed)*0.06; // Slower acceleration changes
     }
-    if(!raceStarted) ai.speed=Math.min(ai.speed,10);
-    ai.speed=Math.max(ai.speed,4);
+    if(!raceStarted) ai.speed=Math.min(ai.speed,8); // Slower at start
+    ai.speed=Math.max(ai.speed,3); // Minimum speed
 
     // ── Nudge decay: fast so it cannot accumulate into spin ──
     ai.velX=(ai.velX||0)*0.72;
@@ -1132,18 +1135,31 @@ function updateAI(dt){
     let nx=ai.mesh.position.x-Math.sin(ai.yaw)*ai.speed*dt+ai.velX*dt;
     let nz=ai.mesh.position.z-Math.cos(ai.yaw)*ai.speed*dt+ai.velZ*dt;
 
-    // ── Radius wall: zero ALL lateral velocity on hit ──
+    // ── Radius wall: zero ALL lateral velocity on hit, stronger correction ──
     const aiR=Math.sqrt(nx*nx+nz*nz);
-    if(aiR>TRACK_R+16){const s=(TRACK_R+16)/aiR;nx*=s;nz*=s;ai.velX=0;ai.velZ=0;ai.speed*=0.82;}
-    else if(aiR<TRACK_R-16){const s=(TRACK_R-16)/aiR;nx*=s;nz*=s;ai.velX=0;ai.velZ=0;ai.speed*=0.82;}
+    if(aiR>TRACK_R+14){const s=(TRACK_R+14)/aiR;nx*=s;nz*=s;ai.velX=0;ai.velZ=0;ai.speed*=0.75;}
+    else if(aiR<TRACK_R-14){const s=(TRACK_R-14)/aiR;nx*=s;nz*=s;ai.velX=0;ai.velZ=0;ai.speed*=0.75;}
 
-    // ── Soft separation from other AI ──
+    // ── Improved separation from other AI ──
     aiRacers.forEach(other=>{
       if(other===ai)return;
       const ox=nx-other.mesh.position.x,oz=nz-other.mesh.position.z;
       const od=Math.sqrt(ox*ox+oz*oz);
-      if(od<4.5&&od>0.01){nx+=ox/od*(4.5-od)*0.35;nz+=oz/od*(4.5-od)*0.35;}
+      if(od<5.5&&od>0.01){
+        // Stronger separation to prevent crashes
+        nx+=ox/od*(5.5-od)*0.5;nz+=oz/od*(5.5-od)*0.5;
+        // Slow down when too close
+        ai.speed*=0.98;
+      }
     });
+
+    // ── Avoid player if too close ──
+    const px=nx-playerGroup.position.x,pz=nz-playerGroup.position.z;
+    const pd=Math.sqrt(px*px+pz*pz);
+    if(pd<6&&pd>0.01){
+      nx+=px/pd*(6-pd)*0.3;nz+=pz/pd*(6-pd)*0.3;
+      ai.speed*=0.97;
+    }
 
     ai.mesh.position.set(nx,0,nz);
     ai.mesh.rotation.y=ai.yaw;
